@@ -168,3 +168,28 @@ def test_get_watchlist_returns_newest_first(app, sample_user):
         # Blade Runner was added later, so it should come first
         assert titles[0] == "Blade Runner"
         assert titles[1] == "Alien"
+
+
+# ── Deduplication is scoped per user ─────────────────────────────────────────
+
+def test_add_to_watchlist_dedup_is_per_user(app, sample_film):
+    """
+    Edge case not covered by the review: the duplicate check is scoped to
+    (user_id, film_id), so two different users may each have the same film
+    on their watchlist. Deduplication must not reject the second user.
+    """
+    with app.app_context():
+        user_one = User(username="alice", email="alice@example.com")
+        user_two = User(username="bob", email="bob@example.com")
+        db.session.add_all([user_one, user_two])
+        db.session.commit()
+
+        add_to_watchlist(user_id=user_one.id, film_id=sample_film)
+        # Same film, different user — should succeed, not raise.
+        entry = add_to_watchlist(user_id=user_two.id, film_id=sample_film)
+
+        assert entry is not None
+        assert entry.user_id == user_two.id
+
+        total = WatchlistEntry.query.filter_by(film_id=sample_film).count()
+        assert total == 2
